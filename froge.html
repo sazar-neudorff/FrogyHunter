@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Frog Hunt 🐸 – Adaptive Camouflage</title>
+<style>
+  :root{
+    --bg:#0b1222; --panel:#0f172a; --soft:#1f2937; --line:#1f2937;
+    --txt:#e5e7eb; --dim:#9ca3af; --acc:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0; font-family:system-ui,Segoe UI,Roboto,Inter,Arial,sans-serif;
+       background:linear-gradient(180deg,#0b1222 0%, #060b16 100%); color:var(--txt);}
+  header{padding:16px 20px 0}
+  header h1{margin:0; font-size:clamp(18px,3.5vw,28px)}
+  header p{margin:.25rem 0 0; color:var(--dim); font-size:14px}
+  .wrap{display:grid; grid-template-columns:320px 1fr; gap:16px; padding:0 16px 16px}
+  @media (max-width:980px){ .wrap{grid-template-columns:1fr} }
+  .panel{background:linear-gradient(180deg,var(--panel),#0a1222); border:1px solid var(--line); border-radius:14px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .panel h2{margin:.2rem 0 12px; font-size:16px}
+  .controls label{display:block; font-size:13px; color:var(--dim); margin:10px 0 6px}
+  .controls input[type="file"], .controls select{
+    width:100%; background:#0b1020; border:1px solid var(--line); color:var(--txt); padding:10px 12px; border-radius:10px; font-size:14px;
+  }
+  .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+  .check{display:flex; align-items:center; gap:8px; font-size:13px; color:#cbd5e1; margin-top:8px}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:10px 14px;
+       border-radius:12px; border:1px solid var(--line); background:var(--soft); color:var(--txt);
+       cursor:pointer; font-weight:700; letter-spacing:.2px; transition:transform .06s ease, filter .2s;}
+  .btn:hover{filter:brightness(1.05)} .btn:active{transform:translateY(1px) scale(.99)}
+  .btn--primary{background:var(--acc); color:#052910; border-color:#16a34a}
+  .btn--danger{background:var(--bad)}
+  .btn[disabled]{opacity:.5; cursor:not-allowed}
+
+  .stage-wrap{display:flex; flex-direction:column; gap:10px}
+  .stage{position:relative; border-radius:16px; overflow:hidden; background:#0b1020; border:1px solid var(--line); min-height:320px; display:flex; align-items:center; justify-content:center}
+  .stage__bg{max-width:100%; max-height:70vh; display:block; user-select:none; -webkit-user-drag:none; pointer-events:none; opacity:.98}
+  .stage__hint{position:absolute; color:var(--dim); font-size:14px; text-align:center; padding:8px 10px}
+  .frog{position:absolute; transform-origin:center; cursor:pointer; user-select:none; -webkit-user-drag:none;
+        opacity:.74; transition:transform .18s cubic-bezier(.2,.9,.2,1), opacity .18s, filter .2s}
+  .frog:hover{transform:scale(1.05)}
+  .frog.found{animation:pop .28s ease forwards; pointer-events:none}
+  @keyframes pop{0%{transform:scale(1); opacity:.85} 50%{transform:scale(1.25); opacity:1} 100%{transform:scale(.55) rotate(-8deg); opacity:0}}
+
+  .hud{display:flex; gap:8px; flex-wrap:wrap; font-size:13px}
+  .badge{background:#0b1020; border:1px solid var(--line); padding:6px 10px; border-radius:999px; display:inline-flex; gap:8px; align-items:center}
+  .hearts{letter-spacing:2px}
+  .mult{font-weight:800}
+
+  .hit{position:absolute; border:2px solid rgba(255,255,255,.6); border-radius:50%; width:8px; height:8px; transform:translate(-50%,-50%); pointer-events:none; animation:ripple .5s ease-out forwards}
+  @keyframes ripple{to{opacity:0; width:44px; height:44px}}
+
+  .overlay{position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(2,6,23,.65); backdrop-filter: blur(6px); padding:16px}
+  .overlay[aria-hidden="false"]{display:flex}
+  .card{background:linear-gradient(180deg,#0f172a,#0a1222); border:1px solid var(--line); border-radius:16px; padding:18px; width:min(640px,95vw)}
+  .card h3{margin:4px 0 12px}
+  .card .grid{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  @media (max-width:540px){ .card .grid{grid-template-columns:1fr} }
+  .kbd{font-family:ui-monospace,Menlo,Consolas,monospace; background:#0b1020; border:1px solid var(--line); border-radius:8px; padding:2px 6px; font-size:12px}
+  .title{font-size:22px; font-weight:800}
+  .subtitle{color:var(--dim); margin-top:-6px; margin-bottom:10px}
+  .list{margin:0; padding-left:18px; color:#cbd5e1; font-size:14px}
+  .sep{border:none; border-top:1px solid var(--line); margin:12px 0}
+  .progress{height:8px; background:#0b1020; border:1px solid var(--line); border-radius:999px; overflow:hidden}
+  .progress > i{display:block; height:100%; width:0%; background:linear-gradient(90deg,var(--acc),#4ade80); transition:width .25s ease}
+</style>
+</head>
+<body>
+  <header>
+    <h1>Frog Hunt 🐸</h1>
+    <p>Finde alle Frösche, bevor die Zeit abläuft! Adaptives Tarnen – funktioniert auf jedem Bild.</p>
+  </header>
+
+  <div class="wrap">
+    <section class="panel">
+      <h2>Spiel-Setup</h2>
+      <div class="controls">
+        <label for="bgInput">Hintergrund (JPG/PNG) – Drag&Drop aufs Feld geht auch</label>
+        <input id="bgInput" type="file" accept="image/*" />
+        <label for="frogInput">Frosch-PNG (optional, sonst Emoji)</label>
+        <input id="frogInput" type="file" accept="image/png,image/webp,image/*" />
+        <label for="camouflageStrength">Tarnungsstärke</label>
+        <select id="camouflageStrength">
+          <option value="1">Leicht</option>
+          <option value="2" selected>Mittel</option>
+          <option value="3">Stark</option>
+        </select>
+        <label class="check"><input id="preferGreen" type="checkbox" /> Grün bevorzugen (wenn vorhanden)</label>
+        <label class="check"><input id="sfx" type="checkbox" checked /> Soundeffekte</label>
+        <div class="row" style="margin-top:12px">
+          <button id="playBtn" class="btn btn--primary">▶ Neues Spiel</button>
+          <button id="pauseBtn" class="btn" disabled>⏸ Pause</button>
+          <button id="resetBtn" class="btn" disabled>⟲ Abbrechen</button>
+        </div>
+      </div>
+      <hr class="sep">
+      <div class="hud">
+        <span class="badge">❤️ Leben: <span id="lives" class="hearts">—</span></span>
+        <span class="badge">⭐ Punkte: <strong id="score">0</strong> <span class="mult" id="mult">x1</span></span>
+        <span class="badge">⏱️ Zeit: <strong id="time">00:00</strong></span>
+        <span class="badge">🐸 Übrig: <strong id="left">—</strong></span>
+        <span class="badge">🎯 Genauigkeit: <strong id="acc">—</strong></span>
+      </div>
+      <div class="progress" style="margin-top:8px"><i id="progressBar"></i></div>
+    </section>
+
+    <section class="panel stage-wrap">
+      <h2>Spielfeld</h2>
+      <div id="stage" class="stage">
+        <span class="stage__hint">
+          Lade ein Bild & starte. <br> Tippe oder klicke auf alle versteckten Frösche!
+        </span>
+        <img id="bg" class="stage__bg" alt="Hintergrund">
+      </div>
+      <small style="color:#94a3b8">Tasten: <span class="kbd">Enter</span> Start, <span class="kbd">Esc</span> Pause, <span class="kbd">R</span> Abbrechen.</small>
+    </section>
+  </div>
+
+  <!-- Menüs -->
+  <div id="menu" class="overlay" aria-hidden="false">
+    <div class="card">
+      <div class="title">Frog Hunt 🐸</div>
+      <div class="subtitle">Wähle deinen Modus & starte das Abenteuer</div>
+      <ul class="list">
+        <li>5 Level mit steigender Schwierigkeit</li>
+        <li>Adaptive Tarnung (Farbe/Helligkeit + Busy-Zones)</li>
+        <li>Combo-Multiplikator für schnelle Funde</li>
+        <li>Highscore lokal gespeichert</li>
+      </ul>
+      <hr class="sep">
+      <div class="row">
+        <button id="menuPlay" class="btn btn--primary">▶ Spiel starten</button>
+        <button id="menuClose" class="btn">Schließen</button>
+      </div>
+      <div style="margin-top:10px; color:#cbd5e1; font-size:14px">
+        Highscore: <span id="highscoreLabel" class="kbd">0</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="summary" class="overlay" aria-hidden="true">
+    <div class="card">
+      <h3>Level geschafft! 🎉</h3>
+      <div class="grid">
+        <div><strong>Level</strong><div id="sumLevel" class="kbd">–</div></div>
+        <div><strong>Zeit</strong><div id="sumTime" class="kbd">–</div></div>
+        <div><strong>Punkte</strong><div id="sumScore" class="kbd">–</div></div>
+        <div><strong>Genauigkeit</strong><div id="sumAcc" class="kbd">–</div></div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button id="nextBtn" class="btn btn--primary">Nächstes Level</button>
+        <button id="quitBtn" class="btn btn--danger">Beenden</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="gameover" class="overlay" aria-hidden="true">
+    <div class="card">
+      <h3>Game Over 💀</h3>
+      <p style="color:#cbd5e1">Versuch’s nochmal – du schaffst das!</p>
+      <div class="row">
+        <button id="retryBtn" class="btn btn--primary">🔁 Neustart</button>
+        <button id="goMenuBtn" class="btn">🏠 Menü</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(()=> {
+  // ---------- Shortcuts ----------
+  const $ = s => document.querySelector(s);
+  const el = {
+    stage: $('#stage'), bg: $('#bg'), hint: $('.stage__hint'),
+    bgInput: $('#bgInput'), frogInput: $('#frogInput'),
+    camoSel: $('#camouflageStrength'), preferGreen: $('#preferGreen'), sfx: $('#sfx'),
+    playBtn: $('#playBtn'), pauseBtn: $('#pauseBtn'), resetBtn: $('#resetBtn'),
+    time: $('#time'), left: $('#left'), acc: $('#acc'), score: $('#score'), mult: $('#mult'), lives: $('#lives'),
+    progress: $('#progressBar'),
+    // menus
+    menu: $('#menu'), menuPlay: $('#menuPlay'), menuClose: $('#menuClose'), highscoreLabel: $('#highscoreLabel'),
+    summary: $('#summary'), sumLevel: $('#sumLevel'), sumTime: $('#sumTime'), sumScore: $('#sumScore'), sumAcc: $('#sumAcc'),
+    nextBtn: $('#nextBtn'), quitBtn: $('#quitBtn'),
+    gameover: $('#gameover'), retryBtn: $('#retryBtn'), goMenuBtn: $('#goMenuBtn'),
+  };
+
+  // ---------- Offscreen Canvas for analysis ----------
+  const off = document.createElement('canvas');
+  const ctx = off.getContext('2d', {willReadFrequently:true});
+
+  // ---------- Simple SFX ----------
+  const audioCtx = (window.AudioContext||window.webkitAudioContext) ? new (window.AudioContext||window.webkitAudioContext)() : null;
+  function beep(freq=660,dur=0.07,type='square',vol=0.03){
+    if(!audioCtx || !el.sfx.checked) return;
+    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq; g.gain.value = vol;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + dur);
+  }
+
+  // ---------- Game State ----------
+  const LEVELS = [
+    {count:[3,4], scale:[0.65,0.9], time:35},
+    {count:[6,8], scale:[0.5,0.75], time:40},
+    {count:[9,12], scale:[0.4,0.65], time:45},
+    {count:[13,16], scale:[0.34,0.55], time:50},
+    {count:[17,22], scale:[0.28,0.5], time:55},
+  ];
+
+  let G = {
+    running:false, paused:false,
+    levelIdx:0, lives:3, score:0, clicks:0, hits:0,
+    startAt:0, timerId:null, timeLeft:0, comboTime:0, multiplier:1,
+    frogSrc:null,
+    greenMask:null, busyMap:null, rect:null // analysis data
+  };
+
+  // ---------- Utils ----------
+  const clamp = (x,a,b)=> Math.max(a, Math.min(b,x));
+  const randi = (a,b)=> Math.floor(Math.random()*(b-a+1))+a;
+  const rand = (a,b)=> Math.random()*(b-a)+a;
+  const fmt = s=> {
+    s = Math.max(0, Math.floor(s));
+    const m = String(Math.floor(s/60)).padStart(2,'0');
+    const ss = String(s%60).padStart(2,'0');
+    return `${m}:${ss}`;
+  };
+
+  function setHUD(){
+    el.lives.textContent = '❤'.repeat(G.lives) || '—';
+    el.score.textContent = G.score;
+    el.mult.textContent = 'x'+G.multiplier;
+    el.left.textContent = G.toFind ?? '—';
+    const acc = G.clicks ? Math.round((G.hits/G.clicks)*100) : 100;
+    el.acc.textContent = `${acc}%`;
+    el.progress.style.width = G.running ? `${(1 - (G.timeLeft / G.levelTime))*100}%` : '0%';
+  }
+  function tick(){
+    if(!G.running || G.paused) return;
+    G.timeLeft -= 0.25;
+    el.time.textContent = fmt(G.timeLeft);
+    el.progress.style.width = `${(1 - (G.timeLeft / G.levelTime))*100}%`;
+    if(G.timeLeft <= 0){
+      loseLife();
+    }
+  }
+
+  function startTimer(){
+    G.timerId = setInterval(()=>{ tick(); }, 250);
+  }
+  function stopTimer(){ clearInterval(G.timerId); }
+
+  // ---------- Image Loading ----------
+  el.bgInput.addEventListener('change', e=>{
+    const f = e.target.files?.[0]; if(!f) return;
+    const r = new FileReader(); r.onload = ()=>{ el.bg.onload=onBgReady; el.bg.src = r.result; el.hint?.remove(); }; r.readAsDataURL(f);
+  });
+  el.stage.addEventListener('dragover', e=>{ e.preventDefault(); el.stage.style.outline='2px dashed #334155'; });
+  el.stage.addEventListener('dragleave', ()=> el.stage.style.outline='none');
+  el.stage.addEventListener('drop', e=>{
+    e.preventDefault(); el.stage.style.outline='none';
+    const f = [...(e.dataTransfer?.files||[])].find(fl=>fl.type.startsWith('image/'));
+    if(f){ const r = new FileReader(); r.onload = ()=>{ el.bg.onload=onBgReady; el.bg.src=r.result; el.hint?.remove(); }; r.readAsDataURL(f); }
+  });
+  el.frogInput.addEventListener('change', e=>{
+    const f = e.target.files?.[0]; if(!f){ G.frogSrc=null; return; }
+    const r = new FileReader(); r.onload = ()=> G.frogSrc = r.result; r.readAsDataURL(f);
+  });
+
+  function emojiFrog(){
+    const c = document.createElement('canvas'); c.width=256; c.height=256;
+    const k = c.getContext('2d');
+    k.font = '200px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",emoji';
+    k.textAlign='center'; k.textBaseline='middle'; k.fillText('🐸',128,140);
+    return c.toDataURL('image/png');
+  }
+
+  function onBgReady(){
+    const r = el.bg.getBoundingClientRect();
+    off.width = Math.max(1, Math.floor(r.width));
+    off.height = Math.max(1, Math.floor(r.height));
+    ctx.drawImage(el.bg, 0, 0, off.width, off.height);
+    G.rect = getRenderRect();
+    buildAnalysis();
+  }
+
+  function getRenderRect(){
+    const r = el.bg.getBoundingClientRect();
+    const pr = el.stage.getBoundingClientRect();
+    return { left:r.left - pr.left, top:r.top - pr.top, width:r.width, height:r.height };
+  }
+
+  // ---------- Analysis: Busy-Zones + optional Green bias ----------
+  function buildAnalysis(){
+    const w = off.width, h = off.height;
+    const img = ctx.getImageData(0,0,w,h).data;
+
+    // Busy map: lokale Varianz (Sobel light -> Kantenenergie)
+    const busy = new Float32Array(w*h);
+    const lum = new Float32Array(w*h);
+    for(let i=0,j=0;i<w*h;i++,j+=4){
+      const L = 0.2126*img[j] + 0.7152*img[j+1] + 0.0722*img[j+2];
+      lum[i]=L;
+    }
+    // Sobel
+    function g(x,y){ return lum[y*w+x] || 0; }
+    for(let y=1;y<h-1;y++){
+      for(let x=1;x<w-1;x++){
+        const gx = -g(x-1,y-1)-2*g(x-1,y)+-g(x-1,y+1)+ g(x+1,y-1)+2*g(x+1,y)+g(x+1,y+1);
+        const gy = -g(x-1,y-1)-2*g(x,y-1)-g(x+1,y-1)+ g(x-1,y+1)+2*g(x,y+1)+g(x+1,y+1);
+        busy[y*w+x] = Math.sqrt(gx*gx+gy*gy);
+      }
+    }
+    // Normalize busy
+    let maxB=1; for(const v of busy) if(v>maxB) maxB=v;
+    for(let i=0;i<busy.length;i++) busy[i]/=maxB;
+
+    // Green mask if preferred
+    let green=null;
+    if(el.preferGreen.checked){
+      green = new Uint8Array(w*h);
+      for(let y=0, i=0; y<h; y++){
+        for(let x=0; x<w; x++, i++){
+          const j = i*4; const r=img[j], g=img[j+1], b=img[j+2], a=img[j+3];
+          const max=Math.max(r,g,b), min=Math.min(r,g,b);
+          const sat = max? (max-min)/max : 0;
+          const lumc = 0.2126*r+0.7152*g+0.0722*b;
+          const dom = (g>r+10)&&(g>b+10);
+          green[i] = (a>0 && dom && sat>0.2 && lumc>35 && lumc<240 && g>60) ? 1 : 0;
+        }
+      }
+    }
+    G.busyMap = {data:busy, w, h};
+    G.greenMask = green? {data:green,w,h} : null;
+  }
+
+  // ---------- Adaptive camouflage at (x,y,w,h) ----------
+  function sampleAvg(x,y,w,h){
+    // sample small grid for average color/brightness
+    const W = off.width, H = off.height;
+    const stepX = Math.max(1, Math.floor(w/6)), stepY = Math.max(1, Math.floor(h/6));
+    let r=0,g=0,b=0,c=0;
+    const data = ctx.getImageData(0,0,W,H).data; // could cache, ok for sizes here
+    for(let yy=y; yy<y+h; yy+=stepY){
+      for(let xx=x; xx<x+w; xx+=stepX){
+        if(xx<0||yy<0||xx>=W||yy>=H) continue;
+        const i = (yy*W+xx)*4;
+        r+=data[i]; g+=data[i+1]; b+=data[i+2]; c++;
+      }
+    }
+    if(c===0) return {r:128,g:128,b:128};
+    return {r:r/c, g:g/c, b:b/c};
+  }
+  function rgb2hsv(r,g,b){
+  r/=255; g/=255; b/=255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  const d = max - min;
+  let hue = 0;
+  if(d !== 0){
+    if(max === r) hue = ((g-b)/d) % 6;
+    else if(max === g) hue = (b-r)/d + 2;
+    else hue = (r-g)/d + 4;
+    hue *= 60; if(hue < 0) hue += 360;
+  }
+  const s = max === 0 ? 0 : d/max;
+  const v = max;
+  return {hue, s, v};
+}
+
+  function camoFilterAt(x,y,w,h,strength=2){
+  const avg = sampleAvg(x,y,w,h);
+  const {hue, s, v} = rgb2hsv(avg.r, avg.g, avg.b);
+  const hueAdj = (hue + (Math.random()*8-4)*strength).toFixed(1);
+  const sat = (1 + (s-0.5)*0.8*strength).toFixed(2);
+  const br  = (1 + (v-0.5)*0.6*strength).toFixed(2);
+  return `hue-rotate(${hueAdj}deg) saturate(${sat}) brightness(${br})`;
+}
+
+  // ---------- Placement ----------
+  function placeFrogs(level){
+    const rect = getRenderRect();
+    if(rect.width<10||rect.height<10){ alert('Bitte zuerst ein Hintergrundbild laden.'); return false; }
+
+    // clear previous
+    el.stage.querySelectorAll('.frog,.hit').forEach(n=>n.remove());
+
+    const count = randi(level.count[0], level.count[1]);
+    const base = Math.max(34, Math.min(rect.width, rect.height) * 0.12);
+    G.toFind = count; G.hits=0; G.clicks=0; G.multiplier=1; G.comboTime=0;
+
+    const src = G.frogSrc || emojiFrog();
+    for(let i=0;i<count;i++){
+      const img = new Image(); img.src = src; img.className='frog'; img.draggable = false;
+      const scale = rand(level.scale[0], level.scale[1]);
+      const size = Math.round(base * scale);
+      img.style.width = size+'px';
+
+      img.onload = ()=>{
+        const w = img.width, h = img.height;
+        const tryMax = 600;
+        let placed=false, attempts=0;
+
+        while(!placed && attempts++ < tryMax){
+          // candidate inside bg rect
+          const x = rand(rect.left, rect.left + rect.width - w);
+          const y = rand(rect.top,  rect.top  + rect.height - h);
+
+          // constraints
+          const okGreen = !G.greenMask || scoreRect(G.greenMask, x-rect.left, y-rect.top, w, h) >= 0.4;
+          if(el.preferGreen.checked && !okGreen) continue;
+
+          const busyScore = scoreRect(G.busyMap, x-rect.left, y-rect.top, w, h); // 0..1
+          // prefer busy > 0.35 (lots of texture)
+          if(busyScore < 0.25 + Math.min(0.25, (i/count)*0.3)) continue;
+
+          // no heavy overlap with existing frogs
+          let overlaps=false;
+          for(const other of el.stage.querySelectorAll('.frog')){
+            const ox = parseFloat(other.style.left), oy = parseFloat(other.style.top);
+            const ow = other.width, oh = other.height;
+            const inter = !(x>ox+ow || x+w<ox || y>oy+oh || y+h<oy);
+            if(inter){ overlaps=true; break; }
+          }
+          if(overlaps) continue;
+
+          // place
+          img.style.left = `${x}px`; img.style.top = `${y}px`;
+          img.style.rotate = `${(Math.random()*20-10).toFixed(1)}deg`;
+          // blend + adaptive filter
+          const strength = Number(el.camoSel.value);
+          img.style.mixBlendMode = 'multiply';
+          img.style.filter = camoFilterAt(Math.floor(x-rect.left), Math.floor(y-rect.top), w, h, strength);
+          img.style.opacity = (0.62 + Math.random()*0.2 - (strength-1)*0.06).toFixed(2);
+          placed=true;
+        }
+
+        if(!placed){
+          // fallback random
+          const x = rand(rect.left, rect.left + rect.width - w);
+          const y = rand(rect.top,  rect.top + rect.height - h);
+          img.style.left = `${x}px`; img.style.top = `${y}px`;
+          img.style.mixBlendMode='multiply';
+          img.style.opacity='0.7';
+        }
+      };
+
+      img.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        G.hits++; G.clicks++;
+        // scoring
+        const now = performance.now();
+        if(now - G.comboTime < 2000){ G.multiplier = Math.min(5, G.multiplier+1); } else { G.multiplier = 1; }
+        G.comboTime = now;
+        const gain = 100 * G.multiplier;
+        G.score += gain; beep(840, .06, 'square', .03);
+
+        img.classList.add('found');
+        setTimeout(()=>img.remove(), 260);
+        G.toFind--;
+        if(G.toFind<=0){ levelClear(); }
+        setHUD();
+      });
+
+      el.stage.appendChild(img);
+    }
+
+    // miss clicks
+    el.stage.addEventListener('click', onMiss, {once:false});
+    setHUD();
+    return true;
+  }
+
+  function scoreRect(map, x, y, w, h){
+    // mean of values in region (nearest clamp)
+    const W = map.w, H = map.h, data = map.data;
+    x=Math.floor(x); y=Math.floor(y); w=Math.max(1,Math.floor(w)); h=Math.max(1,Math.floor(h));
+    let sum=0, c=0, stepX=Math.max(1, Math.floor(w/8)), stepY=Math.max(1, Math.floor(h/8));
+    for(let yy=y; yy<y+h; yy+=stepY){
+      if(yy<0||yy>=H) continue;
+      for(let xx=x; xx<x+w; xx+=stepX){
+        if(xx<0||xx>=W) continue;
+        sum += data[yy*W+xx]; c++;
+      }
+    }
+    return c? sum/c : 0;
+  }
+
+  function onMiss(e){
+    const r = getRenderRect();
+    const x=e.offsetX, y=e.offsetY;
+    if(x>=r.left && x<=r.left+r.width && y>=r.top && y<=r.top+r.height){
+      G.clicks++;
+      G.score = Math.max(0, G.score - 15); // small penalty
+      G.multiplier = 1; // combo reset
+      const fx = document.createElement('span'); fx.className='hit'; fx.style.left=x+'px'; fx.style.top=y+'px';
+      el.stage.appendChild(fx); setTimeout(()=>fx.remove(),500);
+      beep(220,.05,'sawtooth',.02);
+      setHUD();
+    }
+  }
+
+  // ---------- Flow ----------
+  function newGame(){
+    G.levelIdx = 0; G.lives = 3; G.score=0;
+    el.menu.setAttribute('aria-hidden','true');
+    startLevel();
+  }
+  function startLevel(){
+    if(!el.bg.src){ alert('Bitte zuerst ein Hintergrundbild wählen.'); return; }
+    // ensure analysis matches current render size
+    onBgReady();
+
+    const lv = LEVELS[G.levelIdx];
+    el.playBtn.disabled = true; el.resetBtn.disabled = false; el.pauseBtn.disabled = false;
+    G.levelTime = lv.time; G.timeLeft = lv.time; el.time.textContent = fmt(G.timeLeft);
+    placeFrogs(lv);
+    G.running = true; G.paused=false; G.startAt = performance.now();
+    stopTimer(); startTimer();
+  }
+  function levelClear(){
+    G.running=false; stopTimer();
+    // Summary
+    el.sumLevel.textContent = (G.levelIdx+1)+' / '+LEVELS.length;
+    el.sumTime.textContent = fmt(G.levelTime - G.timeLeft);
+    const acc = G.clicks ? Math.round((G.hits/G.clicks)*100) : 100;
+    el.sumAcc.textContent = acc+'%';
+    el.sumScore.textContent = G.score;
+
+    // Highscore
+    const hs = Number(localStorage.getItem('frog_hs')||0);
+    if(G.score>hs){ localStorage.setItem('frog_hs', String(G.score)); }
+
+    el.summary.setAttribute('aria-hidden','false');
+  }
+  function loseLife(){
+    G.running=false; stopTimer();
+    G.lives--;
+    if(G.lives<=0){ gameOver(); return; }
+    // retry same level
+    beep(160,.2,'triangle',.04);
+    setTimeout(()=>{ startLevel(); }, 120);
+  }
+  function gameOver(){
+    // store HS
+    const hs = Number(localStorage.getItem('frog_hs')||0);
+    if(G.score>hs){ localStorage.setItem('frog_hs', String(G.score)); }
+    el.gameover.setAttribute('aria-hidden','false');
+    el.playBtn.disabled=false; el.pauseBtn.disabled=true; el.resetBtn.disabled=true;
+  }
+
+  function quitToMenu(){
+    stopTimer(); G.running=false; G.paused=false;
+    el.playBtn.disabled=false; el.pauseBtn.disabled=true; el.resetBtn.disabled=true;
+    el.menu.setAttribute('aria-hidden','false');
+    el.summary.setAttribute('aria-hidden','true');
+    el.gameover.setAttribute('aria-hidden','true');
+    updateHighscore();
+  }
+
+  // ---------- Buttons ----------
+  el.playBtn.addEventListener('click', ()=>{ newGame(); });
+  el.pauseBtn.addEventListener('click', ()=>{
+    if(!G.running) return;
+    G.paused = !G.paused;
+    el.pauseBtn.textContent = G.paused ? '▶ Weiter' : '⏸ Pause';
+  });
+  el.resetBtn.addEventListener('click', ()=>{ quitToMenu(); });
+
+  el.menuPlay.addEventListener('click', ()=>{ newGame(); });
+  el.menuClose.addEventListener('click', ()=> el.menu.setAttribute('aria-hidden','true'));
+  el.nextBtn.addEventListener('click', ()=>{
+    el.summary.setAttribute('aria-hidden','true');
+    G.levelIdx++;
+    if(G.levelIdx >= LEVELS.length){ // win game -> back to menu with congrats
+      alert('Du hast alle Level geschafft! 🏆');
+      quitToMenu(); return;
+    }
+    startLevel();
+  });
+  el.quitBtn.addEventListener('click', ()=>{ quitToMenu(); });
+  el.retryBtn.addEventListener('click', ()=>{ el.gameover.setAttribute('aria-hidden','true'); newGame(); });
+  el.goMenuBtn.addEventListener('click', ()=>{ quitToMenu(); });
+
+  // ---------- Keys ----------
+  window.addEventListener('keydown', e=>{
+    if(e.key==='Enter' && el.menu.getAttribute('aria-hidden')==='false'){ newGame(); }
+    if(e.key.toLowerCase()==='r'){ quitToMenu(); }
+    if(e.key==='Escape' && G.running){ el.pauseBtn.click(); }
+  });
+
+  // ---------- Highscore ----------
+  function updateHighscore(){
+    const hs = Number(localStorage.getItem('frog_hs')||0);
+    el.highscoreLabel.textContent = hs;
+  }
+  updateHighscore();
+
+  // Ensure frog fallback exists if none chosen
+  if(!G.frogSrc) G.frogSrc = emojiFrog();
+})();
+</script>
+</body>
+</html>
